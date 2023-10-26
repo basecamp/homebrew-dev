@@ -41,9 +41,7 @@ class OpensslAT10 < Formula
     system "perl", "./Configure", *args
     system "make", "depend"
     system "make"
-    # Pending fix for:
-    # 8090411308:error:100B906B:elliptic curve routines:EC_POINT_set_affine_coordinates_GF2m:point is not on curve:ec_lib.c:994:
-    # system "make", "test"
+    system "make", "test"
     system "make", "install", "MANDIR=#{man}", "MANSUFFIX=ssl"
   end
 

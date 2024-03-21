@@ -17,6 +17,8 @@ class OpensslAT10 < Formula
   depends_on "ca-certificates"
 
   # Add darwin64-arm64-cc & debug-darwin64-arm64-cc build targets.
+  # Fix Clang 14 strict aliasing violation in crypto/bn/bn_nist.c.
+  # (https://github.com/openssl/openssl/issues/18225)
   patch :DATA
 
   def install
@@ -94,4 +96,48 @@ __END__
  "debug-darwin-ppc-cc","cc:-DBN_DEBUG -DREF_CHECK -DCONF_DEBUG -DCRYPTO_MDEBUG -DB_ENDIAN -g -Wall -O::-D_REENTRANT:MACOSX::BN_LLONG RC4_CHAR RC4_CHUNK DES_UNROLL BF_PTR:${ppc32_asm}:osx32:dlfcn:darwin-shared:-fPIC:-dynamiclib:.\$(SHLIB_MAJOR).\$(SHLIB_MINOR).dylib",
  # iPhoneOS/iOS
  "iphoneos-cross","llvm-gcc:-O3 -isysroot \$(CROSS_TOP)/SDKs/\$(CROSS_SDK) -fomit-frame-pointer -fno-common::-D_REENTRANT:iOS:-Wl,-search_paths_first%:BN_LLONG RC4_CHAR RC4_CHUNK DES_UNROLL BF_PTR:${no_asm}:dlfcn:darwin-shared:-fPIC -fno-common:-dynamiclib:.\$(SHLIB_MAJOR).\$(SHLIB_MINOR).dylib",
+diff --git a/crypto/bn/bn_nist.c b/crypto/bn/bn_nist.c
+index 325dc228490ad..fcee38ecd184b 100644
+--- openssl-1.0.2u/crypto/bn/bn_nist.c
++++ openssl-1.0.2u/crypto/bn/bn_nist.c
+@@ -297,18 +297,29 @@
+ {
+     return &_bignum_nist_p_521;
+ }
+-
+-static void nist_cp_bn_0(BN_ULONG *dst, const BN_ULONG *src, int top, int max)
+-{
+-    int i;
 
+-#ifdef BN_DEBUG
+-    OPENSSL_assert(top <= max);
+-#endif
+-    for (i = 0; i < top; i++)
+-        dst[i] = src[i];
+-    for (; i < max; i++)
+-        dst[i] = 0;
++/*
++ * To avoid more recent compilers (specifically clang-14) from treating this
++ * code as a violation of the strict aliasing conditions and omiting it, this
++ * cannot be declared as a function.  Moreover, the dst parameter cannot be
++ * cached in a local since this no longer references the union and again falls
++ * foul of the strict aliasing criteria.  Refer to #18225 for the initial
++ * diagnostics and llvm/llvm-project#55255 for the later discussions with the
++ * LLVM developers.  The problem boils down to if an array in the union is
++ * converted to a pointer or if it is used directly.
++ *
++ * This function was inlined regardless, so there is no space cost to be
++ * paid for making it a macro.
++ */
++#define nist_cp_bn_0(dst, src_in, top, max) \
++{                                           \
++    int ii;                                 \
++    const BN_ULONG *src = src_in;           \
++                                            \
++    for (ii = 0; ii < top; ii++)            \
++        (dst)[ii] = src[ii];                \
++    for (; ii < max; ii++)                  \
++        (dst)[ii] = 0;                      \
+ }
+
+ static void nist_cp_bn(BN_ULONG *dst, const BN_ULONG *src, int top)
